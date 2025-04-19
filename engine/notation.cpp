@@ -3,6 +3,9 @@
 #include <iostream>
 #include "Board.hpp"
 
+const int PROMO_WHITE[4] = {4, 1, 3, 2};   // Q N R B
+const int PROMO_BLACK[4] = {10, 7, 9, 8};  // q n r b
+
 int square_index(const std::string& square) {
     if (square.size() != 2) throw std::invalid_argument("Invalid square");
     char file = square[0], rank = square[1];
