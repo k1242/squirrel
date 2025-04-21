@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include "types.hpp"
 
 // Bits 12–15 of the Move data encoding are used to indicate move type:
 //
@@ -26,5 +27,5 @@ public:
     std::string uci() const;
 
 private:
-    uint16_t data;
+    U16 data;
 };

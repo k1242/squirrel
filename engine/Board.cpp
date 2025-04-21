@@ -2,35 +2,10 @@
 #include <sstream>
 #include <cctype>
 #include <stdexcept>
-#include <iostream>
+#include "types.hpp"
 
-const uint64_t Board::CASTLING_MASKS[4] = {
-    square(61) | square(63), // 00. Black kingside
-    square(5)  | square(7),  // 01. White kingside
-    square(56) | square(59), // 10. Black queenside
-    square(0)  | square(3)   // 11. White queenside
-};
-
-const uint64_t Board::EN_PASSANT_MASKS[16] = {
-    // first 8 for white: a3, b3, ...
-    // next  8 for black: a6, b6, ...
-                 square(25),
-    square(24) | square(26),
-    square(25) | square(27),
-    square(26) | square(28),
-    square(27) | square(29),
-    square(28) | square(30),
-    square(29) | square(31),
-    square(30),
-                 square(33),
-    square(32) | square(34),
-    square(33) | square(35),
-    square(34) | square(36),
-    square(35) | square(37),
-    square(36) | square(38),
-    square(37) | square(39),
-    square(38),
-};
+const U64 Board::CASTLING_MASKS[4] = {11529215046068469760ULL, 160ULL, 648518346341351424ULL, 9ULL};
+const U64 Board::EN_PASSANT_MASKS[16] = {33554432ULL, 83886080ULL, 167772160ULL, 335544320ULL, 671088640ULL, 1342177280ULL, 2684354560ULL, 1073741824ULL, 8589934592ULL, 21474836480ULL, 42949672960ULL, 85899345920ULL, 171798691840ULL, 343597383680ULL, 687194767360ULL, 274877906944ULL};
 
 Board::Board() {
     parse_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
@@ -56,18 +31,25 @@ Board::Board(const Board& prev, const Move& move)
     const bool is_white = prev.side_to_move;
     int moving_piece = -1;
     for (int piece = (is_white ? 0 : 6); piece < (is_white ? 6 : 12); ++piece) {
-        if (bitboards[piece] & (1ULL << from)) {
+        if (bitboards[piece] & square(from)) {
             moving_piece = piece;
-            bitboards[piece] &= ~(1ULL << from);   // remove piece from origin
+            bitboards[piece] &= ~square(from);   // remove piece from origin
             break;
         }
     }
 
     // Handle captures (if any)
     for (int piece = (is_white ? 6 : 0); piece < (is_white ? 12 : 6); ++piece) {
-        if (bitboards[piece] & (1ULL << to)) {
-            bitboards[piece] &= ~(1ULL << to);     // remove captured piece
+        if (bitboards[piece] & square(to)) {
+            bitboards[piece] &= ~square(to);       // remove captured piece
             halfmove_clock = 0;                    // reset halfmove_clock due to capture
+            if (piece == (is_white ? 9 : 3)) {
+                if (to == (is_white ? 56 : 0)) {
+                    castling_rights &= ~(is_white ? 0b1000 : 0b0010);
+                } else if (to == (is_white ? 63 : 7)) {
+                    castling_rights &= ~(is_white ? 0b0100 : 0b0001);
+                }
+            }
             break;
         }
     }
@@ -80,9 +62,7 @@ Board::Board(const Board& prev, const Move& move)
             moving_piece = is_white ? PROMO_WHITE[flags - 4] : PROMO_BLACK[flags - 4];
         } else if (to == prev.en_passant_square) {
             // Handle en passant capture
-            std::cout << "Handle en passant capture" << std::endl;
-            int ep_capture_sq = is_white ? (to - 8) : (to + 8);
-            bitboards[is_white ? 6 : 0] &= ~(1ULL << ep_capture_sq);  // remove pawn captured en passant
+            bitboards[is_white ? 6 : 0] &= ~square(is_white ? (to - 8) : (to + 8));  // remove pawn captured en passant
         } else if (abs(to - from) == 16) {
             // Set new en passant square after double pawn push
             en_passant_square = is_white ? from + 8 : from - 8;
@@ -122,9 +102,14 @@ void Board::parse_fen(const std::string& fen) {
     for (auto& b : bitboards) b = 0;
     int sq = 56;
     for (char c : piece_field) {
-        if (c == '/') sq -= 16;
-        else if (isdigit(c)) sq += c - '0';
-        else bitboards[piece_index(c)] |= 1ULL << sq++;
+        if (c == '/') {
+            sq -= 16;
+        } else if (isdigit(c)) {
+            sq += c - '0';
+        } else {
+            bitboards[piece_index(c)] |= square(sq);
+            sq++;
+        }
     }
 
     side_to_move = (turn == "w");
@@ -137,7 +122,7 @@ void Board::parse_fen(const std::string& fen) {
 }
 
 // std::vector<Move> Board::legal_moves() const {
-//     return {};  // TODO: implement
+//     return {};
 // }
 
 
@@ -146,7 +131,7 @@ std::string Board::fen() const
     // Piece placement
     auto piece_on = [&](int sq) -> char {
         for (int idx = 0; idx < 12; ++idx)
-            if (bitboards[idx] & (1ULL << sq))
+            if (bitboards[idx] & square(sq))
                 return piece_char(idx);
         return ' ';
     };
@@ -179,7 +164,6 @@ std::string Board::fen() const
     if (castling_rights & 0b0100) cast += 'k';
     if (castling_rights & 0b1000) cast += 'q';
     fen << (cast.empty() ? "-" : cast) << ' ';
-
 
     // En‑passant square
     bool valid_ep = bitboards[(1-side_to_move)*6] & EN_PASSANT_MASKS[en_passant_square - side_to_move * 16 - 16];

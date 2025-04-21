@@ -2,13 +2,15 @@
 #include <stdexcept>
 #include <iostream>
 #include "Board.hpp"
+#include "Move.hpp"
+#include "types.hpp"
 
 const int PROMO_WHITE[4] = {4, 1, 3, 2};   // Q N R B
 const int PROMO_BLACK[4] = {10, 7, 9, 8};  // q n r b
 
-int square_index(const std::string& square) {
-    if (square.size() != 2) throw std::invalid_argument("Invalid square");
-    char file = square[0], rank = square[1];
+int square_index(const std::string& sq) {
+    if (sq.size() != 2) throw std::invalid_argument("Invalid square");
+    char file = sq[0], rank = sq[1];
     if (file < 'a' || file > 'h' || rank < '1' || rank > '8')
         throw std::invalid_argument("Invalid square");
     return (rank - '1') * 8 + (file - 'a');
@@ -59,16 +61,42 @@ void print_board(const Board& board) {
     for (char& c : squares) c = '.';
 
     for (int i = 0; i < 12; ++i) {
-        uint64_t bb = board.bitboards[i];
+        U64 bb = board.bitboards[i];
         for (int sq = 0; sq < 64; ++sq) {
             if (bb & (1ULL << sq)) squares[sq] = symbols[i];
         }
     }
 
-    std::cout << "Board:\n";
+    std::cout << board.fen() << "\n";
+    std::cout << "-------------------\n";
+    for (int rank = 7; rank >= 0; --rank) {
+        std::cout << rank+1 << "   ";
+        for (int file = 0; file < 8; ++file)
+            std::cout << squares[rank * 8 + file] << ' ';
+        std::cout << '\n';
+    }
+    std::cout << "\n    a b c d e f g h\n-------------------\n";
+}
+
+void print_bitboard(const U64& bb) {
+    char squares[64];
+    for (char& c : squares) c = '0';
+
+    for (int sq = 0; sq < 64; ++sq) {
+        if (bb & square(sq)) squares[sq] = '1';
+    }
+
+    std::cout << "Bitboard: " << bb << std::endl;
     for (int rank = 7; rank >= 0; --rank) {
         for (int file = 0; file < 8; ++file)
             std::cout << squares[rank * 8 + file] << ' ';
         std::cout << '\n';
     }
+}
+
+void print_moves(const std::vector<Move>& moves) {
+    for (const auto& move : moves) {
+        std::cout << move.uci() << ", ";
+    }
+    std::cout << "\n";
 }
