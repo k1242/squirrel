@@ -4,12 +4,13 @@ from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 ext_modules = [
     Pybind11Extension(
-        "squirrel",                                          # *.pyd
+        "squirrel",
         [
-            "bindings/squirrel_py.cpp",                      #
+            "bindings/squirrel_py.cpp",
             "engine/Board.cpp",
             "engine/Move.cpp",
             "engine/notation.cpp",
+            "engine/movegen.cpp",
         ],
         include_dirs=["engine"],
         cxx_std=20,
