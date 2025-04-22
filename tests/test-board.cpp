@@ -1,63 +1,51 @@
 #include <iostream>
+#include <cstdint>
+#include <chrono>
 #include "Board.hpp"
 #include "Move.hpp"
 #include "notation.hpp"
 #include "movegen.hpp"
-#include <cstdint>
+
+
+U64 perft(Board& board, int depth) {
+    if (depth == 0) return 1;
+
+    U64 nodes = 0ULL;
+    std::vector<Move> moves = board.legal_moves();
+
+    for (const Move& mv : moves) {
+        Board next(board, mv);
+        nodes += perft(next, depth - 1);
+    }
+    return nodes;
+}
+
 
 int main() {
     std::cout << std::endl;
 
-    // Board board;
-
-    // fen en_passant black
-    // Board board("rnbqkbnr/1ppppppp/p7/4P3/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2");
-    // board = Board(board, Move::from_uci("h7h5")); // here 
-    // board = Board(board, Move::from_uci("d7d5"));  // not here
-    
-    // fen en_passant white
-    // Board board("r1bqkb1r/N1ppp2p/2n3pn/6N1/5pP1/8/PPPPPP1P/R1BQKBR1 b Qkq g3 0 9");
-
-    // en_passant 
-    Board board("3q1br1/r3k2p/n2p1n2/pPpPpp2/1P3Np1/2BK4/PR1N1P1P/2Q1RB2 w - - 10 34");
-    board = Board(board, Move::from_uci("h2h4"));
-    board = Board(board, Move::from_uci("g4h3"));
-
-    // castling
-    // Board board("r3k2r/ppp1qp1p/1n1p1np1/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R3K2R w KQkq - 0 10");
-    // board = Board(board, Move::from_uci("e1g1")); // w: O-O
-    // board = Board(board, Move::from_uci("e1c1")); // w: O-O-O
-    // board = Board(board, Move::from_uci("e8g8")); // b: O-O
-    // board = Board(board, Move::from_uci("e8c8")); // b: O-O-O
-
-    // kill the king rook
-    // Board board("4kb1r/2rb1p2/1pn1p1Bp/p1p2q2/P5P1/BP2P2N/1Q1PKP1P/RN2R3 w k - 2 20");
-    // board = Board(board, Move::from_uci("b2h8"));
-
-    // Board board;
-    // board = Board(board, Move::from_uci("e2e4"));
-    // board = Board(board, Move::from_uci("e7e5"));
-    // board = Board(board, Move::from_uci("d2d4"));
-    // board = Board(board, Move::from_uci("f8c5"));
-    // Board board("n1k5/1pppp1P1/8/8/8/5P2/pPPPP2P/1NBQKBNR b - - 10 1");
-
-    auto occupancies = get_occupancies(board);
-    
-    U64 attacked = 0ULL;
-    for (int sq = 0; sq < 64; ++sq)
-    {
-        if (is_square_attacked(board, occupancies, sq, board.side_to_move)) attacked |= square(sq);
-    }
-
-    std::vector<Move> moves;
-
-    generate_pawn_moves(board, occupancies, moves);
+    Board board;
+    // Board board("5rk1/5pp1/7B/4N3/2B3Q1/8/8/4K2R b K - 0 1");
+    // Board board("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 ");
+    // Board board("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+    // Board board("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
+    // Board board("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10");
 
     print_board(board);
-    // print_bitboard(attacked);
+    
+    // std::vector<Move> moves = board.legal_moves();
+    // std::cout << "# moves: " << moves.size() << std::endl;
+    // print_moves(moves);
 
-    print_moves(moves);
+    int depth = 6;
+    auto start = std::chrono::high_resolution_clock::now();
+    uint64_t nodes = perft(board, depth);
+    auto stop  = std::chrono::high_resolution_clock::now();
+    double ms = std::chrono::duration<double, std::milli>(stop - start).count();
 
+    std::cout << "\nDepth " << depth << " nodes: " << nodes << '\n';
+    std::cout << "Time:          " << ms/1000.0   << " s\n";
+    std::cout << "NPS:           " << (nodes / (ms / 1000.0)) << '\n';
 
     std::cout << std::endl;
     return 0;

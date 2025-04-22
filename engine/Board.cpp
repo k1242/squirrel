@@ -1,8 +1,9 @@
-#include "notation.hpp"
 #include <sstream>
 #include <cctype>
 #include <stdexcept>
 #include "types.hpp"
+#include "movegen.hpp"
+#include "notation.hpp"
 
 const U64 Board::CASTLING_MASKS[4] = {11529215046068469760ULL, 160ULL, 648518346341351424ULL, 9ULL};
 const U64 Board::EN_PASSANT_MASKS[16] = {33554432ULL, 83886080ULL, 167772160ULL, 335544320ULL, 671088640ULL, 1342177280ULL, 2684354560ULL, 1073741824ULL, 8589934592ULL, 21474836480ULL, 42949672960ULL, 85899345920ULL, 171798691840ULL, 343597383680ULL, 687194767360ULL, 274877906944ULL};
@@ -121,9 +122,30 @@ void Board::parse_fen(const std::string& fen) {
     en_passant_square = (ep == "-") ? -1 : square_index(ep);
 }
 
-// std::vector<Move> Board::legal_moves() const {
-//     return {};
-// }
+
+
+std::vector<Move> Board::legal_moves() const {
+    std::vector<Move> pseudo;
+    auto occupancies = get_occupancies(*this);
+    generate_pawn_moves  (*this, occupancies, pseudo);
+    generate_knight_moves(*this, occupancies, pseudo);
+    generate_bishop_moves(*this, occupancies, pseudo);
+    generate_rook_moves  (*this, occupancies, pseudo);
+    generate_queen_moves (*this, occupancies, pseudo);
+    generate_king_moves  (*this, occupancies, pseudo);
+
+    // keep only legal moves
+    std::vector<Move> legal;
+    legal.reserve(pseudo.size());
+
+    for (const Move& move : pseudo) {
+        Board next(*this, move);
+        if (!is_king_attacked(next, get_occupancies(next), 1-next.side_to_move))
+            legal.push_back(move);
+    }
+    return legal;
+}
+
 
 
 std::string Board::fen() const

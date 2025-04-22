@@ -1,4 +1,3 @@
-#include <iostream>
 #include <bit> // popcount, countr_zero
 #include "movegen.hpp"
 #include "notation.hpp"
@@ -54,6 +53,11 @@ int is_square_attacked(const Board& board, const std::array<U64, 3>& occupancies
 	return 0;
 }
 
+int is_king_attacked(const Board& board, const std::array<U64, 3>& occupancies, int side) {
+	int king_pos = std::countr_zero(board.bitboards[side ? 5 : 11]);
+	return is_square_attacked(board, occupancies, king_pos, 1-side);
+}
+
 inline bool is_free(const U64 occupied, const int sq) {
 	return !(occupied & square(sq));
 }
@@ -74,19 +78,17 @@ void generate_pawn_moves(
         std::vector<Move>& move_list) 
 {
     const int side      = board.side_to_move;
-    U64 pawns           = board.bitboards[side ? 0 : 6];
     const U64 occupied  = occupancies[2];
-    const U64 opponent  = occupancies[side ? 0 : 1];
 
-    while (pawns) {
-        const int from = std::countr_zero(pawns);
+    U64 bb = board.bitboards[side ? 0 : 6];
+    while (bb) {
+        const int from = std::countr_zero(bb);
         const bool promo_rank = side ? (from >= 48 && from <= 55) : (from >= 8  && from <= 15);
-        pawns &= pawns - 1; // pop LS1B
+        bb &= bb - 1; // pop LS1B
 
         // quiet move
         const int forward = side ? from + 8 : from - 8;
-        if (forward >= 0 && forward < 64 && is_free(occupied, forward))
-        {
+        if (forward >= 0 && forward < 64 && is_free(occupied, forward)) {
         	// quiet promotion
             if (promo_rank) {
                 move_list.emplace_back(from, forward, 4);
@@ -107,9 +109,8 @@ void generate_pawn_moves(
         }
 
         // captures
-        U64 attacks = pawn_attacks[side][from] & opponent;
-        while (attacks)
-        {
+        U64 attacks = pawn_attacks[side][from] & occupancies[side ? 0 : 1];
+        while (attacks) {
             const int to = std::countr_zero(attacks);
             attacks &= attacks - 1;
 
@@ -127,11 +128,138 @@ void generate_pawn_moves(
         }
 
 		// en‑passant capture
-        if (board.en_passant_square != -1)
-        {
+        if (board.en_passant_square != -1) {
             if (pawn_attacks[side][from] & square(board.en_passant_square)) {
                 move_list.emplace_back(from, board.en_passant_square, 2);
             }
         }
     }
 }
+
+void generate_knight_moves(
+        const Board& board,
+        const std::array<U64, 3>& occupancies,
+        std::vector<Move>& move_list)
+{
+    const int side = board.side_to_move;
+
+    U64 bb = board.bitboards[side ? 1 : 7];
+    while (bb) {
+        const int from = std::countr_zero(bb);
+        bb &= bb - 1;
+
+        U64 attacks = knight_attacks[from] & ~occupancies[side];
+        while (attacks) {
+            const int to = std::countr_zero(attacks);
+            attacks &= attacks - 1;
+            move_list.emplace_back(from, to, 0);
+        }
+    }
+}
+
+void generate_bishop_moves(
+        const Board& board,
+        const std::array<U64, 3>& occupancies,
+        std::vector<Move>& move_list)
+{
+    const int side = board.side_to_move;
+
+    U64 bb = board.bitboards[side ? 2 : 8];
+    while (bb) {
+        const int from = std::countr_zero(bb);
+        bb &= bb - 1;
+
+        U64 attacks = get_bishop_attacks(from, occupancies[2]) & ~occupancies[side];
+        while (attacks) {
+            const int to = std::countr_zero(attacks);
+            attacks &= attacks - 1;
+            move_list.emplace_back(from, to, 0);
+        }
+    }
+}
+
+void generate_rook_moves(
+        const Board& board,
+        const std::array<U64, 3>& occupancies,
+        std::vector<Move>& move_list)
+{
+    const int side = board.side_to_move;
+
+    U64 bb = board.bitboards[side ? 3 : 9];
+    while (bb) {
+        const int from = std::countr_zero(bb);
+        bb &= bb - 1;
+
+        U64 attacks = get_rook_attacks(from, occupancies[2]) & ~occupancies[side];
+        while (attacks) {
+            const int to = std::countr_zero(attacks);
+            attacks &= attacks - 1;
+
+            move_list.emplace_back(from, to, 0);
+        }
+    }
+}
+
+void generate_queen_moves(
+        const Board& board,
+        const std::array<U64, 3>& occupancies,
+        std::vector<Move>& move_list)
+{
+    const int side = board.side_to_move;
+
+    U64 bb = board.bitboards[side ? 4 : 10];
+    while (bb) {
+        const int from = std::countr_zero(bb);
+        bb &= bb - 1;
+
+        U64 attacks = get_queen_attacks(from, occupancies[2]) & ~occupancies[side];
+        while (attacks) {
+            const int to = std::countr_zero(attacks);
+            attacks &= attacks - 1;
+
+            move_list.emplace_back(from, to, 0);
+        }
+    }
+}
+
+
+void generate_king_moves(
+        const Board& board,
+        const std::array<U64, 3>& occupancies,
+        std::vector<Move>& move_list)
+{
+    const int side = board.side_to_move;
+
+    U64 bb = board.bitboards[side ? 5 : 11];
+    while (bb) {
+        const int from = std::countr_zero(bb);
+        bb &= bb - 1;
+
+        U64 attacks = king_attacks[from] & ~occupancies[side];
+        while (attacks) {
+            const int to = std::countr_zero(attacks);
+            attacks &= attacks - 1;
+            move_list.emplace_back(from, to, 0);
+        }
+    }
+
+    // king-side castling
+    if (board.castling_rights & (side ? 0b0001 : 0b0100)) {
+        if (!(occupancies[2] & (side ? 96ULL : 6917529027641081856ULL))) {
+            if (!is_square_attacked(board, occupancies, side ? 4 : 60, 1-side) &&
+                !is_square_attacked(board, occupancies, side ? 5 : 61, 1-side)) {
+                move_list.emplace_back(side ? 4 : 60, side ? 6 : 62, 0);
+            }
+        }
+    }
+    // queen-side castling
+    if (board.castling_rights & (side ? 0b0010 : 0b1000)) {
+        if (!(occupancies[2] & (side ? 14ULL : 1008806316530991104ULL))) {
+            if (!is_square_attacked(board, occupancies, side ? 4 : 60, 1-side) &&
+                !is_square_attacked(board, occupancies, side ? 3 : 59, 1-side)) {
+                move_list.emplace_back(side ? 4 : 60, side ? 2 : 58, 0);
+            }
+        }
+    }
+}
+
