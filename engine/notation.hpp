@@ -6,12 +6,9 @@
 extern const int PROMO_WHITE[4];
 extern const int PROMO_BLACK[4];
 
-// Convert square index (0..63) to 64-bit mask
 inline constexpr U64 square(int index) {
     return 1ULL << index;
 } 
-
-// get_bit : bb & squre(sq)
 
 int square_index(const std::string& square);
 std::string square_name(int index);

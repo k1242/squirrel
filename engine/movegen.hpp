@@ -20,3 +20,5 @@ void generate_bishop_moves(const Board& board, const std::array<U64, 3>& occupan
 void generate_rook_moves(const Board& board, const std::array<U64, 3>& occupancies, std::vector<Move>& move_list);
 void generate_queen_moves(const Board& board, const std::array<U64, 3>& occupancies, std::vector<Move>& move_list);
 void generate_king_moves(const Board& board, const std::array<U64, 3>& occupancies, std::vector<Move>& move_list);
+
+U64 perft(Board& board, int depth);
