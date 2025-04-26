@@ -43,4 +43,16 @@ inline vec loadv(const std::string& path, cnpy::NpyArray& holder) {
     return vec{ ptr, { len, 1 } };
 }
 
+inline void print_vec(const lin::vec& v) {
+    int n = v.shape[0];
+    std::cout << "[";
+    for (int i = 0; i < n; ++i) {
+        std::cout << v.data[i];
+        if (i != n - 1) {
+            std::cout << ", ";
+        }
+    }
+    std::cout << "]" << std::endl;
+}
+
 }
