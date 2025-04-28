@@ -4,6 +4,7 @@
 #include "types.hpp"
 #include "movegen.hpp"
 #include "notation.hpp"
+#include "profiler.hpp"
 
 const U64 Board::CASTLING_MASKS[4] = {11529215046068469760ULL, 160ULL, 648518346341351424ULL, 9ULL};
 const U64 Board::EN_PASSANT_MASKS[16] = {33554432ULL, 83886080ULL, 167772160ULL, 335544320ULL, 671088640ULL, 1342177280ULL, 2684354560ULL, 1073741824ULL, 8589934592ULL, 21474836480ULL, 42949672960ULL, 85899345920ULL, 171798691840ULL, 343597383680ULL, 687194767360ULL, 274877906944ULL};
@@ -24,25 +25,30 @@ Board::Board(const Board& prev, const Move& move)
       halfmove_clock(prev.halfmove_clock + 1), // increment initially
       fullmove_number(prev.fullmove_number + (prev.side_to_move ? 0 : 1)) {
 
+    // PROFILE;
+
     const int from = move.from();
     const int to = move.to();
     const int flags = move.flags();
+
+    const U64 mask_from = square(from);
+    const U64 mask_to = square(to);
 
     // Determine moving piece and its color
     const bool is_white = prev.side_to_move;
     int moving_piece = -1;
     for (int piece = (is_white ? 0 : 6); piece < (is_white ? 6 : 12); ++piece) {
-        if (bitboards[piece] & square(from)) {
+        if (bitboards[piece] & mask_from) {
             moving_piece = piece;
-            bitboards[piece] &= ~square(from);   // remove piece from origin
+            bitboards[piece] &= ~mask_from;   // remove piece from origin
             break;
         }
     }
 
     // Handle captures (if any)
     for (int piece = (is_white ? 6 : 0); piece < (is_white ? 12 : 6); ++piece) {
-        if (bitboards[piece] & square(to)) {
-            bitboards[piece] &= ~square(to);       // remove captured piece
+        if (bitboards[piece] & mask_to) {
+            bitboards[piece] &= ~mask_to;       // remove captured piece
             halfmove_clock = 0;                    // reset halfmove_clock due to capture
             if (piece == (is_white ? 9 : 3)) {
                 if (to == (is_white ? 56 : 0)) {
@@ -90,7 +96,10 @@ Board::Board(const Board& prev, const Move& move)
     }
 
     // Normal move
-    bitboards[moving_piece] |= square(to);
+    bitboards[moving_piece] |= mask_to;
+
+    // ++halfmove_clock;
+    // if (!is_white) ++fullmove_number;
 
 }
 
@@ -122,10 +131,26 @@ void Board::parse_fen(const std::string& fen) {
     en_passant_square = (ep == "-") ? -1 : square_index(ep);
 }
 
+std::vector<Move> filter_legal_moves(const Board& board, const std::vector<Move>& pseudo) {
+    // PROFILE;
+
+    std::vector<Move> legal;
+    legal.reserve(pseudo.size());
+
+    for (const Move& move : pseudo) {
+        Board next(board, move);
+        if (!is_king_attacked(next, get_occupancies(next), 1 - next.side_to_move))
+            legal.push_back(move);
+    }
+
+    return legal;
+}
 
 
 std::vector<Move> Board::legal_moves() const {
-    std::vector<Move> pseudo;
+    // PROFILE;
+    std::vector<Move> pseudo; pseudo.reserve(64);
+
     auto occupancies = get_occupancies(*this);
     generate_pawn_moves  (*this, occupancies, pseudo);
     generate_knight_moves(*this, occupancies, pseudo);
@@ -134,18 +159,19 @@ std::vector<Move> Board::legal_moves() const {
     generate_queen_moves (*this, occupancies, pseudo);
     generate_king_moves  (*this, occupancies, pseudo);
 
-    // keep only legal moves
-    std::vector<Move> legal;
-    legal.reserve(pseudo.size());
+    return filter_legal_moves(*this, pseudo);
 
-    for (const Move& move : pseudo) {
-        Board next(*this, move);
-        if (!is_king_attacked(next, get_occupancies(next), 1-next.side_to_move))
-            legal.push_back(move);
-    }
-    return legal;
+    // // keep only legal moves
+    // std::vector<Move> legal; legal.reserve(64);
+    // legal.reserve(pseudo.size());
+
+    // for (const Move& move : pseudo) {
+    //     Board next(*this, move);
+    //     if (!is_king_attacked(next, get_occupancies(next), 1-next.side_to_move))
+    //         legal.push_back(move);
+    // }
+    // return legal;
 }
-
 
 
 std::string Board::fen() const
@@ -197,4 +223,17 @@ std::string Board::fen() const
     fen << int(halfmove_clock) << ' ' << fullmove_number;
 
     return fen.str();
+}
+
+
+bool Board::operator==(const Board& other) const {
+    for (int i = 0; i < 12; ++i) {
+        if (bitboards[i] != other.bitboards[i])
+            return false;
+    }
+    return side_to_move == other.side_to_move
+        && castling_rights == other.castling_rights
+        && en_passant_square == other.en_passant_square
+        && halfmove_clock == other.halfmove_clock
+        && fullmove_number == other.fullmove_number;
 }

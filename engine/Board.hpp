@@ -29,6 +29,14 @@
 // false : black
 // true  : white
 
+// struct Undo {
+//     Move move;
+//     int captured_piece;
+//     uint8_t castling_rights;
+//     int en_passant_square;
+//     uint8_t halfmove_clock;
+// };
+
 class Board {
 public:
     Board();
@@ -36,9 +44,9 @@ public:
     Board(const Board& prev, const Move& move);
 
     void parse_fen(const std::string& fen);
+
     std::vector<Move> legal_moves() const;
 
-    // bool white_to_move() const { return side_to_move; }
 
     std::array<U64, 12> bitboards;
 
@@ -52,4 +60,7 @@ public:
     static const U64 EN_PASSANT_MASKS[16];
 
     std::string fen() const;
+
+    bool operator==(const Board& other) const;
+    bool operator!=(const Board& other) const { return !(*this == other); }
 };

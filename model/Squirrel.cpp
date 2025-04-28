@@ -1,75 +1,64 @@
-#include <algorithm>   // copy
+#include "Squirrel.hpp"
 #include "notation.hpp"
-#include <bit> // countr_zero
+#include <algorithm>
+#include <bit>
+#include <format>
 
-void Squirrel::add_piece_feature(int piece, int sq)
+// constructor
+Squirrel::Squirrel(const std::string& dir, const Board& root_pos)
+    : B1p(dir + "/B1p-32-256-w.npy", dir + "/B1p-32-a.npy"),
+      B1o(dir + "/B1o-32-256-w.npy", dir + "/B1o-32-a.npy"),
+      B2 (dir + "/B2-32-64-w.npy",   dir + "/B2-32-a.npy"),
+      C1 (dir + "/C1-1-32-w.npy",    dir + "/C1-1-a.npy"),
+      A1 (dir + "/A1-32-32-w.npy",   dir + "/A1-32-a.npy"),
+      A2 (dir + "/A2-1-32-w.npy",    dir + "/A2-1-a.npy")
 {
-    int fW = piece * 64 + sq;
-    lin::vami(accW_node, W, fW);
+    // load base embedding
+    B0w = lin::loadm(dir + "/B0-768-256-w.npy", hB0w);
+    B0a = lin::loadv(dir + "/B0-256-a.npy",     hB0a);
 
-    int fB = mirror_piece(piece) * 64 + mirror_sq(sq);
-    lin::vami(accB_node, W, fB);
-}
+    // load actor lookup matrix
+    A0w = lin::loadm(dir + "/A0-768-32-w.npy", hA0w);
 
-void Squirrel::remove_piece_feature(int piece, int sq)
-{
-    int fW = piece * 64 + sq;
-    lin::vsmi(accW_node, W, fW);
-
-    int fB = mirror_piece(piece) * 64 + mirror_sq(sq);
-    lin::vsmi(accB_node, W, fB);
-}
-
-// void Squirrel::add_global_feature(int fid)
-// {
-//     lin::vami(accW_node, W, fid);
-//     lin::vami(accB_node, W, fid);
-// }
-
-// void Squirrel::remove_global_feature(int fid)
-// {
-//     lin::vsmi(accW_node, W, fid);
-//     lin::vsmi(accB_node, W, fid);
-// }
-
-
-
-Squirrel::Squirrel(const std::string& W_path, const Board& root_pos)
-{
     root = root_pos;
-    W = lin::loadm(wPath, hW);
 
-    auto bind = [](lin::vec& v, float* buf) {
-        v.data     = buf;
-        v.shape[0] = FEAT_DIM;
-        v.shape[1] = 1;
-    };
+    // constant shift
+    lin::vavi(accW_root, B0a);
+    lin::vavi(accB_root, B0a);
 
-    Allocate output buffers
-    float out_buf[rows];       // size == rows
-    lin::vec out{ out_buf, { rows, 1 } };
-
-
-    accW_node = {bufW_node, {836, 1}};
-    accB_node = {bufB_node, {836, 1}};
-    accW_root = {bufW_root, {836, 1}};
-    accB_root = {bufB_root, {836, 1}};
-
-    // Fill root accumulators
+    // embed all pieces of the root position
     for (int p = 0; p < 12; ++p) {
         U64 bb = root.bitboards[p];
         while (bb) {
             int sq = std::countr_zero(bb);
             bb &= bb - 1;
-            // add_piece_feature for root
-            lin::vami(accW_root, W, piece * 64 + sq);
-            lin::vami(accB_root, W, mirror_piece(piece) * 64 + mirror_sq(sq));
+            lin::vami(accW_root, B0w, p * 64 + sq);
+            lin::vami(accB_root, B0w, mirror_piece(p) * 64 + mirror_sq(sq));
         }
     }
-    // TODO: init castling rights
-    // TODO: init en-passant
 
     reset();
+    moves.reserve(218);
+    policy_logits_.reserve(218);
+}
+
+// helpers to touch piece features
+void Squirrel::add_piece_feature(int piece, int sq)
+{
+    int fW = piece * 64 + sq;
+    lin::vami(accW_node, B0w, fW);
+
+    int fB = mirror_piece(piece) * 64 + mirror_sq(sq);
+    lin::vami(accB_node, B0w, fB);
+}
+
+void Squirrel::remove_piece_feature(int piece, int sq)
+{
+    int fW = piece * 64 + sq;
+    lin::vsmi(accW_node, B0w, fW);
+
+    int fB = mirror_piece(piece) * 64 + mirror_sq(sq);
+    lin::vsmi(accB_node, B0w, fB);
 }
 
 void Squirrel::make(const Move& m)
@@ -77,12 +66,15 @@ void Squirrel::make(const Move& m)
     const int from  = m.from();
     const int to    = m.to();
     const U64 mask_from = square(from);
-    const U64 mask_to = square(to);
-    const int flags = m.flags();
-    const bool side = node.side_to_move;
-    node.side_to_move = !side;
+    const U64 mask_to   = square(to);
+    const int flags     = m.flags();
+    const bool side     = node.side_to_move;
+    node.side_to_move   = !side;
 
-    // Locate moving piece
+    ++node.halfmove_clock;
+    if (!side) ++node.fullmove_number;
+
+    // locate moving piece
     int moving = -1;
     for (int p = side ? 0 : 6; p < (side ? 6 : 12); ++p)
         if (node.bitboards[p] & mask_from) {
@@ -92,94 +84,129 @@ void Squirrel::make(const Move& m)
             break;
         }
 
-    // Handle captures on target
+    // captures
     for (int p = side ? 6 : 0; p < (side ? 12 : 6); ++p)
         if (node.bitboards[p] & mask_to) {
             node.bitboards[p] &= ~mask_to;
             remove_piece_feature(p, to);
             node.halfmove_clock = 0;
-            // rook captured on initial square → lose opponent castling right
-            if (p == (side ? 9 : 3)) {
-                if (to == (side ? 56 : 0))
-                    node.castling_rights &= side ? ~0b1000 : ~0b0010;
-                else if (to == (side ? 63 : 7))
-                    node.castling_rights &= side ? ~0b0100 : ~0b0001;
-            }
             break;
         }
 
-    // Pawn specifics
-    bool pown_move = (moving == 0 || moving == 6);
-    if (pown_move) node.halfmove_clock = 0;
+    // pawn specifics
+    bool pawn_move = (moving == 0 || moving == 6);
+    if (pawn_move) node.halfmove_clock = 0;
 
-    // En-passant capture
-    if (pown_move && to == node.en_passant_square) {
+    // en-passant capture
+    if (pawn_move && to == node.en_passant_square) {
         int cap_sq = side ? to - 8 : to + 8;
         node.bitboards[side ? 6 : 0] &= ~square(cap_sq);
         remove_piece_feature(side ? 6 : 0, cap_sq);
     }
 
-    // Promotion
-    if (pown_move && flags >= 4 && flags <= 7) {
+    // promotion
+    if (pawn_move && flags >= 4 && flags <= 7)
         moving = side ? PROMO_WHITE[flags - 4] : PROMO_BLACK[flags - 4];
-    }
 
-    // Clear/set en-passant square
-    // TODO: upd en-passant feature 
     node.en_passant_square = -1;
-    if (pown_move && std::abs(to - from) == 16) {
+    if (pawn_move && std::abs(to - from) == 16)
         node.en_passant_square = side ? from + 8 : from - 8;
-    }
 
-    // Update castling rights for mover
-    // TODO: upd castling feature 
-    uint8_t mask = 0xFF;
-    if (moving == (side ? 5 : 11)) {            
-        // king moved
-        mask ^= side ? 0b0011 : 0b1100;
-    } else if (moving == (side ? 3 : 9)) {       
-        // rook moved
-        if (from == (side ? 0 : 56))
-            mask ^= side ? 0b0010 : 0b1000;
-        else if (from == (side ? 7 : 63))
-            mask ^= side ? 0b0001 : 0b0100;
-    }
-    node.castling_rights &= mask;
-
-    // Handle castling move itself
-    if (moving == (side ? 5 : 11) && std::abs(to - from) == 2) {
-        node.bitboards[side ? 3 : 9] ^= node.CASTLING_MASKS[(to < from) * 2 + side];
-    }
-
-    // Place moving piece on target
+    // place mover
     node.bitboards[moving] |= mask_to;
     add_piece_feature(moving, to);
-
-    // Halfmove / fullmove counters
-    ++node.halfmove_clock;
-    if (!side) ++node.fullmove_number;
-
 }
-
-
 
 void Squirrel::reset()
 {
-    // Restore board to the root position
     node = root;
-
-    // Copy of root accumulators into working ones
-    std::copy(accW_root.data, accW_root.data + accW_root.shape[0], accW_node.data);
-    std::copy(accB_root.data, accB_root.data + accB_root.shape[0], accB_node.data);
+    std::copy(bufW_root, bufW_root + DIM, bufW_node);
+    std::copy(bufB_root, bufB_root + DIM, bufB_node);
 }
 
-
-
-void Squirrel::jump(const Move& m) 
+void Squirrel::jump(const Move& m)
 {
     make(m);
-
     root = node;
-    std::copy(bufW_node, bufW_node + 836, bufW_root);
-    std::copy(bufB_node, bufB_node + 836, bufB_node);
+    std::copy(bufW_node, bufW_node + DIM, bufW_root);
+    std::copy(bufB_node, bufB_node + DIM, bufB_root);
+}
+
+// Body
+void Squirrel::encode_body()
+{
+    bool side = node.side_to_move;
+
+    for (int i = 0; i < DIM; ++i) {
+        float own  = acc(side,  i);
+        float oppo = acc(!side, i);
+        xo[i] = own  > 0.0f ? own  : 0.0f;
+        xp[i] = oppo > 0.0f ? oppo : 0.0f;
+    }
+
+    B1p(xp); B1p.relu();
+    B1o(xo); B1o.relu();
+
+    for (int i = 0; i < 32; ++i) {
+        xj[i]      = B1p.inner[i];
+        xj[i + 32] = B1o.inner[i];
+    }
+
+    B2(xj); B2.relu();
+}
+
+// Critic
+void Squirrel::run_critic()
+{
+    C1(B2.inner);
+    value_ = C1.inner[0];
+}
+
+// Actor
+void Squirrel::run_actor()
+{
+    A1(B2.inner);
+
+    bool side = node.side_to_move;
+
+    policy_logits_.assign(moves.size(), 0.0f);
+    
+    for (int k = 0; k < moves.size(); ++k) {
+        const Move& m = moves[k];
+        int from = m.from();
+        int to   = m.to();
+        int moving = -1;
+        U64 mask_from = square(from);
+
+        for (int p = side ? 0 : 6; p < (side ? 6 : 12); ++p) {
+            if (node.bitboards[p] & mask_from) { 
+                moving = p; 
+                break; 
+            }
+        }
+
+        for (int i = 0; i < 32; ++i)
+            xm[i] = 0.0f;
+
+        // std::cout << std::format("{} : {}({}) → {}({})\n", moving, from, moving * 64 + from, to, moving * 64 + to);
+
+        lin::vsmi(xm, A0w, moving * 64 + from);
+        lin::vami(xm, A0w, moving * 64 + to);
+
+        lin::vavi(xm, A1.inner);
+        for (int i = 0; i < 32; ++i)
+            xm[i] = (xm[i] < 0.0f) ? 0.0f : xm[i];
+
+        A2(xm);
+        policy_logits_[k] = A2.inner[0];
+    }
+}
+
+void Squirrel::evaluate()
+{
+    moves = node.legal_moves();
+    
+    encode_body();
+    run_critic();
+    run_actor();
 }

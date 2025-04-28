@@ -35,13 +35,25 @@ void vmmc(const vec& v, const mat& M, vec& out) {
 void vavi(vec& v, const vec& u) {
     assert(v.shape[0] == u.shape[0] && v.shape[1] == 1 && u.shape[1] == 1);
     const int n = v.shape[0];
-    for (int i = 0; i < n; ++i) v.data[i] += u.data[i];
+    for (int i = 0; i < n; ++i) v[i] += u[i];
 }
 
 void vsvi(vec& v, const vec& u) {
     assert(v.shape[0] == u.shape[0] && v.shape[1] == 1 && u.shape[1] == 1);
     const int n = v.shape[0];
-    for (int i = 0; i < n; ++i) v.data[i] -= u.data[i];
+    for (int i = 0; i < n; ++i) v[i] -= u[i];
+}
+
+void vavc(vec& v, const vec& u, vec& out) {
+    assert(v.shape[0] == u.shape[0] && v.shape[1] == 1 && u.shape[1] == 1);
+    const int n = v.shape[0];
+    for (int i = 0; i < n; ++i) out[i] = v[i] + u[i];
+}
+
+void vsvc(vec& v, const vec& u, vec& out) {
+    assert(v.shape[0] == u.shape[0] && v.shape[1] == 1 && u.shape[1] == 1);
+    const int n = v.shape[0];
+    for (int i = 0; i < n; ++i) out[i] = v[i] - u[i];
 }
 
 
