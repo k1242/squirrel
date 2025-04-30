@@ -47,7 +47,6 @@ public:
 
     std::vector<Move> legal_moves() const;
 
-
     std::array<U64, 12> bitboards;
 
     bool side_to_move;
@@ -64,3 +63,9 @@ public:
     bool operator==(const Board& other) const;
     bool operator!=(const Board& other) const { return !(*this == other); }
 };
+
+
+void is_terminal(const Board& board,
+                 const std::vector<Move>& moves,
+                 bool& terminal,
+                 float& value);

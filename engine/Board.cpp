@@ -1,6 +1,7 @@
 #include <sstream>
 #include <cctype>
 #include <stdexcept>
+#include <bit>
 #include "types.hpp"
 #include "movegen.hpp"
 #include "notation.hpp"
@@ -236,4 +237,69 @@ bool Board::operator==(const Board& other) const {
         && en_passant_square == other.en_passant_square
         && halfmove_clock == other.halfmove_clock
         && fullmove_number == other.fullmove_number;
+}
+
+
+void is_terminal(const Board& board,
+                 const std::vector<Move>& moves,
+                 bool& terminal,
+                 float& value)
+{
+    terminal = false;
+
+    // checkmate or stalemate
+    if (moves.empty()) {
+        bool in_check = is_king_attacked(board, get_occupancies(board), board.side_to_move);
+        terminal = true;
+        // value = in_check ? (1.0f - 2.0f * static_cast<float>(board.side_to_move)) : 0.0f;
+        value = in_check ? 1.0f : 0.0f;
+        return;
+    }
+
+    // fifty-move rule
+    if (board.halfmove_clock >= 100) {
+        terminal = true;
+        value = 0.0f;
+        return;
+    }
+
+    // insufficient material
+    U64 pawns  = board.bitboards[0] | board.bitboards[6];
+    U64 rooks  = board.bitboards[3] | board.bitboards[9];
+    U64 queens = board.bitboards[4] | board.bitboards[10];
+
+    if (pawns | rooks | queens) return; // material still sufficient
+
+    U64 bishops = board.bitboards[2] | board.bitboards[8];
+    U64 knights = board.bitboards[1] | board.bitboards[7];
+    int minors  = std::popcount(bishops | knights);
+
+    if (minors <= 1) {                         // K vs K / K+minor vs K
+        terminal = true;
+        value = 0.0f;
+        return;
+    }
+
+    const U64 dark = 0xAA55AA55AA55AA55ULL;        // dark squares
+
+    auto side_draw = [&](U64 bishops, U64 knights) {
+        int b = std::popcount(bishops);
+        int n = std::popcount(knights);
+        if (b + n > 2) return false;               // too much material
+        if (b && n)    return false;               // bishop + knight can mate
+        if (b == 2) {                              // two bishops
+            bool opposite = (bishops & dark) && (bishops & ~dark);
+            if (opposite) return false;            // opposite colours can mate
+        }
+        return true;                               // otherwise draw
+    };
+
+    bool white_ok = side_draw(board.bitboards[2], board.bitboards[1]);
+    bool black_ok = side_draw(board.bitboards[8], board.bitboards[7]);
+
+    if (white_ok && black_ok) {
+        terminal = true;
+        value = 0.0f;
+        return;
+    }
 }

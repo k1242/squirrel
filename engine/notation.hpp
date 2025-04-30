@@ -23,5 +23,5 @@ void print_board(const Board& board);
 void print_bitboard(const U64& bb);
 void print_moves(const std::vector<Move>& moves);
 
-inline int mirror_sq   (int sq)  { return sq ^ 56; }
-inline int mirror_piece(int p)   { return (p < 6) ? p + 6 : p - 6; }
+inline constexpr int mirror_sq   (int sq)  { return sq ^ 56; }
+inline constexpr int mirror_piece(int p)   { return (p < 6) ? p + 6 : p - 6; }

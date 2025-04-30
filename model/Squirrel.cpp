@@ -3,9 +3,10 @@
 #include <algorithm>
 #include <bit>
 #include <format>
+#include <cassert>
 
 // constructor
-Squirrel::Squirrel(const std::string& dir, const Board& root_pos)
+Squirrel::Squirrel(const std::string& dir)
     : B1p(dir + "/B1p-32-256-w.npy", dir + "/B1p-32-a.npy"),
       B1o(dir + "/B1o-32-256-w.npy", dir + "/B1o-32-a.npy"),
       B2 (dir + "/B2-32-64-w.npy",   dir + "/B2-32-a.npy"),
@@ -19,8 +20,19 @@ Squirrel::Squirrel(const std::string& dir, const Board& root_pos)
 
     // load actor lookup matrix
     A0w = lin::loadm(dir + "/A0-768-32-w.npy", hA0w);
+    
+    moves.reserve(218);
+    policy_logits_.reserve(218);
+}
 
+void Squirrel::set_root(const Board& root_pos)
+{
     root = root_pos;
+
+    for (int i = 0; i < DIM; ++i){
+        accW_root[i] = 0.0f;
+        accB_root[i] = 0.0f;
+    }
 
     // constant shift
     lin::vavi(accW_root, B0a);
@@ -38,9 +50,8 @@ Squirrel::Squirrel(const std::string& dir, const Board& root_pos)
     }
 
     reset();
-    moves.reserve(218);
-    policy_logits_.reserve(218);
 }
+
 
 // helpers to touch piece features
 void Squirrel::add_piece_feature(int piece, int sq)
@@ -69,10 +80,6 @@ void Squirrel::make(const Move& m)
     const U64 mask_to   = square(to);
     const int flags     = m.flags();
     const bool side     = node.side_to_move;
-    node.side_to_move   = !side;
-
-    ++node.halfmove_clock;
-    if (!side) ++node.fullmove_number;
 
     // locate moving piece
     int moving = -1;
@@ -84,12 +91,27 @@ void Squirrel::make(const Move& m)
             break;
         }
 
+    if (moving < 0){
+        // std::cout << std::endl;
+        std::cout << "\n----- ERR ---------\n";
+        print_board(node);
+        print_moves(node.legal_moves());
+        std::cout << std::format("FEN:   {}\nmove:  {}\n", node.fen(), m.uci());
+    }
+    assert(moving >= 0);
+
     // captures
     for (int p = side ? 6 : 0; p < (side ? 12 : 6); ++p)
         if (node.bitboards[p] & mask_to) {
             node.bitboards[p] &= ~mask_to;
             remove_piece_feature(p, to);
             node.halfmove_clock = 0;
+            if (p == (side ? 9 : 3)) {
+                if (to == (side ? 56 : 0))
+                    node.castling_rights &= ~(side ? 0b1000 : 0b0010);
+                else if (to == (side ? 63 : 7))
+                    node.castling_rights &= ~(side ? 0b0100 : 0b0001);
+            }
             break;
         }
 
@@ -112,9 +134,40 @@ void Squirrel::make(const Move& m)
     if (pawn_move && std::abs(to - from) == 16)
         node.en_passant_square = side ? from + 8 : from - 8;
 
+    // Update castling rights for qkQK
+    uint8_t castling_upd = 0xFF;
+    if (moving == (side ? 5 : 11)) {
+        // King moved → remove both castling rights
+        castling_upd ^= (side ? 0b0011 : 0b1100);
+    } else if (moving == (side ? 3 : 9)) {
+        // Rook moved from starting square
+        if (from == (side ? 0 : 56))      // a1 / a8
+            castling_upd ^= (side ? 0b0010 : 0b1000);
+        else if (from == (side ? 7 : 63)) // h1 / h8
+            castling_upd ^= (side ? 0b0001 : 0b0100);
+    }
+    node.castling_rights &= castling_upd;
+
+    // Handle castling moves
+    if (moving == (side ? 5 : 11) && std::abs(to - from) == 2) {
+        const int rook_from = (to > from) ? (from + 3) : (from - 4);
+        const int rook_to   = (to > from) ? (from + 1) : (from - 1);
+        const int rook_piece = side ? 3 : 9;
+
+        node.bitboards[rook_piece] &= ~square(rook_from);
+        remove_piece_feature(rook_piece, rook_from);
+
+        node.bitboards[rook_piece] |= square(rook_to);
+        add_piece_feature(rook_piece, rook_to);
+    }
+    
     // place mover
     node.bitboards[moving] |= mask_to;
     add_piece_feature(moving, to);
+
+    node.side_to_move   = !side;
+    ++node.halfmove_clock;
+    if (!side) ++node.fullmove_number;
 }
 
 void Squirrel::reset()
@@ -188,8 +241,7 @@ void Squirrel::run_actor()
         for (int i = 0; i < 32; ++i)
             xm[i] = 0.0f;
 
-        // std::cout << std::format("{} : {}({}) → {}({})\n", moving, from, moving * 64 + from, to, moving * 64 + to);
-
+        assert(moving >= 0);
         lin::vsmi(xm, A0w, moving * 64 + from);
         lin::vami(xm, A0w, moving * 64 + to);
 
@@ -202,11 +254,17 @@ void Squirrel::run_actor()
     }
 }
 
-void Squirrel::evaluate()
+void Squirrel::eval()
 {
     moves = node.legal_moves();
-    
-    encode_body();
-    run_critic();
-    run_actor();
+    is_terminal(node, moves, terminal, value_);
+
+    if (!terminal) {
+        encode_body();
+        run_critic();
+        run_actor();
+        value_ = 0.0f;
+        policy_logits_.assign(moves.size(), 0.0f);
+    }
+
 }

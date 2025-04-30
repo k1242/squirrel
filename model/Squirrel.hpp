@@ -14,21 +14,28 @@ public:
     Board node;
 
     // Construct network and initialize root position
-    explicit Squirrel(const std::string& weight_dir, const Board& root_pos);
+    explicit Squirrel(const std::string& dir);
+    void set_root(const Board& root_pos);
 
     void make(const Move& m); // play a move
     void jump(const Move& m); // play a move and treat the new position as a root
     void reset(); // restore the position to the original root
 
     // Run Body → Critic → Actor, fill value_ and policy_logits_
-    void evaluate();
+    void eval();
+
+    // Legal moves of the current node, filled by evaluate()
+    std::vector<Move> moves; 
 
     // Accessors
-    float value() const                     { return value_; }
-    const std::vector<float>& policy() const{ return policy_logits_; }
-    bool  is_white() const                  { return node.side_to_move; }
+    float value() const                      { return value_; }
+    const std::vector<float>& policy() const { return policy_logits_; }
+    bool  is_white() const                   { return node.side_to_move; }
+    bool terminal;
 
-    std::vector<Move> moves; // legal moves of the current node, filled by evaluate()
+    // results
+    float value_{0.0f};
+    std::vector<float> policy_logits_;
 
 private:
     // helpers
@@ -52,10 +59,6 @@ private:
     float buf_xm[32]{};
 
     lin::vec xo{buf_xo,{DIM,1}}, xp{buf_xp,{DIM,1}}, xj{buf_xj,{64,1}}, xm{buf_xm,{32,1}};
-
-    // results
-    float value_{0.0f};
-    std::vector<float> policy_logits_;
 
     // accumulators and board state
     static constexpr int DIM_ACC = 256;
