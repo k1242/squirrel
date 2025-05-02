@@ -5,7 +5,7 @@
 #include <cassert>
 #include <span>
 #include <chrono>
-#include <format>
+// #include <format>
 #include <future>
 #include <semaphore>
 #include <mutex>
@@ -13,9 +13,6 @@
 #include "Squirrel.hpp"
 #include "Tree.hpp"
 #include "types.hpp"
-
-constexpr int TASKS            = 10;
-constexpr int MAX_CONCURRENCY  = 8;
 
 struct PolicyItemBin {
     U16 move;
@@ -91,35 +88,43 @@ void selfplay()
 }
 
 
-std::counting_semaphore<MAX_CONCURRENCY> sem(MAX_CONCURRENCY);
-std::mutex cout_mtx;
-
-void selfplay_task(int id)
+int main(int argc, char* argv[])
 {
-    sem.acquire();
-    try {
-        selfplay();
-        std::lock_guard lock(cout_mtx);
-        std::cout << std::format("Done {:02d}\n", id);
-    } catch (...) {
-        std::lock_guard lock(cout_mtx);
-        std::cerr << std::format("Error in task {:02d}\n", id);
+    int tasks = 10;
+    int concurrency = 8;
+
+    if (argc >= 2) tasks = std::stoi(argv[1]);
+    if (argc >= 3) concurrency = std::stoi(argv[2]);
+    if (concurrency <= 0 || concurrency > 256) {
+        std::cerr << "Invalid concurrency: " << concurrency << "\n";
+        return 1;
     }
-    sem.release();
-}
 
-int main()
-{
+    std::counting_semaphore<256> sem(concurrency);
+    std::mutex cout_mtx;
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
     std::vector<std::future<void>> jobs;
-    for (int i = 0; i < TASKS; ++i)
-        jobs.emplace_back(std::async(std::launch::async, selfplay_task, i + 1));
+    for (int i = 0; i < tasks; ++i) {
+        sem.acquire();
+        jobs.emplace_back(std::async(std::launch::async, [&, i] {
+            try {
+                selfplay();
+                std::lock_guard lock(cout_mtx);
+                std::cout << "Done " << i + 1 << "\n";
+            } catch (...) {
+                std::lock_guard lock(cout_mtx);
+                std::cout << "Error in " << i + 1 << "\n";
+            }
+            sem.release();
+        }));
+    }
 
     for (auto& f : jobs) f.get();
 
     auto t1 = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> dt = t1 - t0;
-    std::cout << std::format("Finished {} games in {:.3f}s.\n", TASKS, dt.count());
+    std::cout << "\nFinished " << tasks << " games in " << dt.count() << "s.\n";
     return 0;
 }
