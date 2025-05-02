@@ -1,6 +1,6 @@
 #pragma once
 #include <cstddef>
-#include <format>
+// #include <format>
 #include <cmath>
 #include "cnpy.h"
 
@@ -51,7 +51,8 @@ inline void print_vec(const lin::vec& v, const int lim) {
     int n = (lim == -1) ? v.shape[0] : lim;
     std::cout << "[";
     for (int i = 0; i < n; ++i) {
-        std::cout << std::format("{:.2f}", v[i]);
+        // std::cout << std::format("{:.2f}", v[i]);
+        std::cout << v[i];
         if (i != n - 1) {
             std::cout << ", ";
         }

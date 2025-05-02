@@ -2,7 +2,7 @@
 #include "notation.hpp"
 #include <algorithm>
 #include <bit>
-#include <format>
+// #include <format>
 #include <cassert>
 
 // constructor
@@ -91,13 +91,6 @@ void Squirrel::make(const Move& m)
             break;
         }
 
-    if (moving < 0){
-        // std::cout << std::endl;
-        std::cout << "\n----- ERR ---------\n";
-        print_board(node);
-        print_moves(node.legal_moves());
-        std::cout << std::format("FEN:   {}\nmove:  {}\n", node.fen(), m.uci());
-    }
     assert(moving >= 0);
 
     // captures
@@ -160,7 +153,7 @@ void Squirrel::make(const Move& m)
         node.bitboards[rook_piece] |= square(rook_to);
         add_piece_feature(rook_piece, rook_to);
     }
-    
+
     // place mover
     node.bitboards[moving] |= mask_to;
     add_piece_feature(moving, to);
