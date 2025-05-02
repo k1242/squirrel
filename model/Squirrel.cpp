@@ -253,9 +253,9 @@ void Squirrel::eval()
     is_terminal(node, moves, terminal, value_);
 
     if (!terminal) {
-        encode_body();
-        run_critic();
-        run_actor();
+        // encode_body();
+        // run_critic();
+        // run_actor();
         value_ = 0.0f;
         policy_logits_.assign(moves.size(), 0.0f);
     }

@@ -19,6 +19,7 @@ class Move {
 public:
     Move() : data(0) {};
     Move(int from, int to, int flags = 0);
+    explicit Move(U16 raw) : data(raw) {};
     static Move from_uci(const std::string& move_str);
 
     int from() const;

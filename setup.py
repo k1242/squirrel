@@ -14,7 +14,7 @@ ext_modules = [
         ],
         include_dirs=["engine"],
         cxx_std=20,
-        extra_compile_args=["/EHsc"]
+        extra_compile_args=["/EHsc"] # ["-std=c++20", "-Ofast"]
     ),
 ]
 
