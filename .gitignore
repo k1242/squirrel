@@ -33,7 +33,7 @@
 
 # local
 ./data/bin
-./data/batch
+./data/games
 ./build
 ./bin
 
